@@ -8,23 +8,19 @@ import math
 from typing import Dict, Any, List, Optional, Tuple
 
 # --- BOT CONFIGURATION ---
-# Pastikan variabel environment DISCORD_BOT_SECRET terisi
+# Mengambil Token dari Environment Variable (Wajib untuk Hosting seperti Replit/VPS)
 TOKEN = os.environ.get('DISCORD_BOT_SECRET')
 if not TOKEN:
-    # This is a placeholder for local development without environment variables
-    # In a real bot, you should handle this or get the token directly.
-    # For now, we assume this code is run in a secure environment.
-    pass 
+    # Dalam lingkungan real, Anda harus menangani ini dengan aman.
+    print("WARNING: DISCORD_BOT_SECRET not found. Bot will not run.")
     
-# Jika Anda menjalankan ini secara lokal, ganti ini dengan token Anda:
-# TOKEN = "YOUR_DISCORD_BOT_TOKEN_HERE"
-
-
 # Gunakan 'R$' sebagai mata uang utama
 CURRENCY_SYMBOL = "R$"
 COOLDOWN_TIME = 30 # Cooldown untuk Auto Fishing
 
 intents = discord.Intents.default()
+# Wajib mengaktifkan message_content intent
+intents.message_content = True 
 bot = commands.Bot(command_prefix='/', intents=intents)
 
 # Embed Colors based on Rarity (Hex Codes)
@@ -65,9 +61,8 @@ ISLAND_LIST = list(ISLAND_DATA.keys())
 def parse_fish_data_by_island(fish_str: str) -> Dict[str, List[Dict[str, Any]]]:
     lines = fish_str.strip().split('\n')
     parsed_data: Dict[str, List[Dict[str, Any]]] = {}
-    current_location = "Fisherman Island" # Default to the first location if parsing fails
+    current_location = "Fisherman Island"
     
-    # Secret Fish Weight data (from previous code)
     secret_weights = {
         "Crystal Crab": (110520, 130960), "Orca": (115470, 126780),
         "Monster Shark": (130410, 165610), "Eerie Shark": (1010, 1830),
@@ -83,7 +78,6 @@ def parse_fish_data_by_island(fish_str: str) -> Dict[str, List[Dict[str, Any]]]:
         "Ancient Whale": (310890, 355730),
     }
 
-    # Location name mapping based on the numbering in the input
     location_map = {
         1: "Fisherman Island", 2: "Ocean", 3: "Kohana Island", 4: "Kohana Volcano",
         5: "Coral Reefs", 6: "Esoteric Depths", 7: "Tropical Grove", 8: "Crater Island",
@@ -96,47 +90,43 @@ def parse_fish_data_by_island(fish_str: str) -> Dict[str, List[Dict[str, Any]]]:
 
         parts = line.split(',')
         
-        # Check for new location marker (e.g., '1. Fisherman Island,Orca,Secret,1.500.000')
+        # Check for new location marker (e.g., '1. Fisherman Island')
         if parts[0].isdigit():
             try:
                 location_id = int(parts[0].split('.')[0])
                 if location_id in location_map:
                     current_location = location_map[location_id]
-                    # Start parsing fish on the same line if possible
                     if len(parts) > 1 and parts[1].strip() in location_map.values():
-                        # This line is just the header
                         continue
             except ValueError:
                 pass
         
-        # Now, parse the fish line (which starts with a comma or is just the fish info)
+        # Parse the fish line
         if len(parts) >= 4:
             fish_name = parts[1].strip() if parts[0].strip() == '' else parts[0].strip()
             
             # Re-adjust parts if the location ID and name were in parts[0], parts[1]
             if fish_name in location_map.values():
-                fish_name = parts[2].strip()
-                rarity = parts[3].strip()
-                chance_str = parts[4].strip()
+                if len(parts) >= 5:
+                    fish_name = parts[2].strip()
+                    rarity = parts[3].strip()
+                    chance_str = parts[4].strip()
+                else: continue
             else:
                 rarity = parts[-2].strip()
                 chance_str = parts[-1].strip()
 
-            
+            # Skip header rows
+            if fish_name.lower() in ["ikan", "orca"] and current_location != "Fisherman Island": 
+                continue
+
             try:
+                # Menghilangkan titik ribuan dan M/K untuk konversi float
                 chance_str = chance_str.replace('.', '').replace('M', '000000').replace('K', '000').strip()
                 catch_chance = float(chance_str)
             except ValueError:
                 continue
 
-            # Skip header rows
-            if fish_name.lower() in ["ikan", "orca"]: 
-                if fish_name == "Orca" and current_location != "Fisherman Island": 
-                    pass # Keep Orca if the location is right
-                else:
-                    continue
-
-            # Default weight
             weight_min, weight_max = 1, 10 
             is_secret_weight = False
             
@@ -165,17 +155,9 @@ def parse_fish_data_by_island(fish_str: str) -> Dict[str, List[Dict[str, Any]]]:
             if current_location not in parsed_data:
                 parsed_data[current_location] = []
             
-            # Ensure the fish is not added multiple times if the island header and the first fish are on the same line
             if fish_name not in [f['name'] for f in parsed_data[current_location]]:
                 parsed_data[current_location].append(fish_data)
                 
-    # Manual cleanup for edge cases where the first fish is skipped
-    if not parsed_data.get("Fisherman Island") and "Orca" in lines[1]:
-        # If the first fish was missed, add it back (simplified for this example)
-        if "Fisherman Island" not in parsed_data: parsed_data["Fisherman Island"] = []
-        parsed_data["Fisherman Island"].insert(0, {'name': 'Orca', 'rarity': 'Secret', 'chance': 1500000.0, 'weight_min': 115470, 'weight_max': 126780, 'is_secret_weight': True, 'base_price': 1500.0})
-
-
     return parsed_data
 
 # The full fish list from the user's request
@@ -388,7 +370,7 @@ BAIT_DATA = {
     "Singularity Bait": {"luck_bonus": 380, "price": 8200000},
 }
 
-# --- QUEST DATA (Simulasi prasyarat untuk Rod Quest) ---
+# --- QUEST DATA ---
 QUEST_DATA = {
     "Lava Rod Quest": {"type": "catch_rarity", "rarity": "Rare", "goal": 3, "reward_item": "Lava Rod", "title": "Kohana Quest: Catch 3 Rare Fish"},
     "Ghostfinn Rod Quest": {"type": "catch_rarity", "rarity": "Mythic", "goal": 3, "reward_item": "Ghostfinn Rod", "title": "Deep Sea Quest: Catch 3 Mythic Fish"},
@@ -401,7 +383,6 @@ QUEST_DATA = {
 # --- UTILITY FUNCTIONS ---
 
 def get_user_stats(user_id):
-    # (Same as before: Initializes user data and handles daily reset)
     if user_id not in USER_DATA:
         initial_progress = {q_id: 0 for q_id in QUEST_DATA if q_id.endswith("Quest")}
         
@@ -447,11 +428,49 @@ def calculate_total_luck(user_stats):
     
     return int(total_luck)
 
+def update_quest_progress(user_stats, trigger_type, value=None, item_name=None, rarity=None):
+    # Quest Rod (Permanent)
+    for q_id, q_data in QUEST_DATA.items():
+        if q_id.endswith("Quest"):
+            progress = user_stats["quest_progress"].get(q_id, 0)
+            if progress < q_data["goal"]: 
+                if q_data["type"] == "catch_rarity" and trigger_type == "catch" and rarity == q_data["rarity"]:
+                    # Logic: Element Rod Quest hanya bisa di-progress setelah punya Ghostfinn
+                    if q_id == "Element Rod Quest" and "Ghostfinn Rod" not in user_stats["owned_rods"]:
+                        continue
+                        
+                    user_stats["quest_progress"][q_id] = min(user_stats["quest_progress"].get(q_id, 0) + (value or 1), q_data["goal"])
+
+    # Daily Quests
+    for q_id, q_data in user_stats["daily_quests"].items():
+        if not q_data["claimed"] and q_data["progress"] < q_data["goal"]:
+            if q_data["type"] == "catch_rarity" and trigger_type == "catch" and rarity == q_data["rarity"]:
+                q_data["progress"] = min(q_data["progress"] + (value or 1), q_data["goal"])
+            elif q_data["type"] == "sell_count" and trigger_type == "sell":
+                q_data["progress"] = min(q_data["progress"] + value, q_data["goal"])
+                
+def check_quest_completion(user_stats):
+    completed_count = 0
+    
+    # Quest Rod (Permanent)
+    for q_id, q_data in QUEST_DATA.items():
+         if q_id.endswith("Quest"):
+            progress = user_stats["quest_progress"].get(q_id, 0)
+            # 1.5 menandakan sudah completed tapi belum diklaim (jika 1.5 = sudah diklaim)
+            if progress >= q_data["goal"] and progress < q_data["goal"] + 0.5: 
+                completed_count += 1
+                
+    # Daily Quests
+    for q_id, q_data in user_stats["daily_quests"].items():
+        if q_data["progress"] >= q_data["goal"] and not q_data["claimed"]:
+            completed_count += 1
+            
+    return completed_count
+
 def perform_fishing(user_stats):
     total_luck = calculate_total_luck(user_stats)
     current_location = user_stats["location"]
     
-    # --- PENTING: Menggunakan pool ikan spesifik lokasi ---
     fish_pool_location = FISH_POOL_BY_ISLAND.get(current_location, [])
     
     if not fish_pool_location: 
@@ -464,6 +483,7 @@ def perform_fishing(user_stats):
         base_chance = fish["chance"]
         
         # Formula untuk Adjusted Weight: Luck mempengaruhi peluang mendapatkan ikan langka.
+        # Semakin kecil base_chance (semakin langka), semakin besar bobotnya jika luck tinggi.
         adjusted_weight = (1 / base_chance) * (1 + (total_luck / 100))
         
         choices.append(fish)
@@ -480,9 +500,8 @@ def perform_fishing(user_stats):
     
     # Weight Check (Gagal Tarik)
     if weight_kg > max_rod_weight:
-        # Pengecualian: Secret fish dengan weight besar yang gagal, tetap masukkan progress quest
         update_quest_progress(user_stats, "catch", value=1, rarity=chosen_fish["rarity"]) 
-        return "Failed", f"LOST IT! The **{chosen_fish['name']}**'s weight ({weight_kg:,.2f} kg) exceeded your **{user_stats['current_rod']}** capacity ({max_rod_weight:,} kg). You need a stronger Rod to catch this Secret fish!", f"{weight_kg:,.2f}", chosen_fish["rarity"], 0.00
+        return "Failed", f"LOST IT! The **{chosen_fish['name']}**'s weight ({weight_kg:,.2f} kg) exceeded your **{user_stats['current_rod']}** capacity ({max_rod_weight:,} kg). You need a stronger Rod to catch this {chosen_fish['rarity']} fish!", f"{weight_kg:,.2f}", chosen_fish["rarity"], 0.00
 
     # Success
     weight_ratio = max(1.0, float(weight_kg) / float(chosen_fish["weight_min"]))
@@ -496,42 +515,9 @@ def perform_fishing(user_stats):
 
     return "Success", chosen_fish, f"{weight_kg:,.2f}", chosen_fish["rarity"], coins_earned
 
-# (update_quest_progress and check_quest_completion are the same as before)
-def update_quest_progress(user_stats, trigger_type, value=None, item_name=None, rarity=None):
-    for q_id, q_data in QUEST_DATA.items():
-        if q_id.endswith("Quest"):
-            progress = user_stats["quest_progress"].get(q_id, 0)
-            if progress < 1: 
-                if q_data["type"] == "catch_rarity" and trigger_type == "catch" and rarity == q_data["rarity"]:
-                    user_stats["quest_progress"][q_id] = min(user_stats["quest_progress"][q_id] + (value or 1), q_data["goal"])
-                if q_id == "Element Rod Quest" and "Ghostfinn Rod" not in user_stats["owned_rods"]:
-                    user_stats["quest_progress"][q_id] = 0 
 
-    for q_id, q_data in user_stats["daily_quests"].items():
-        if not q_data["claimed"] and q_data["progress"] < q_data["goal"]:
-            if q_data["type"] == "catch_rarity" and trigger_type == "catch" and rarity == q_data["rarity"]:
-                q_data["progress"] = min(q_data["progress"] + (value or 1), q_data["goal"])
-            elif q_data["type"] == "sell_count" and trigger_type == "sell":
-                q_data["progress"] = min(q_data["progress"] + value, q_data["goal"])
-                
-def check_quest_completion(user_stats):
-    completed_count = 0
-    for q_id, q_data in QUEST_DATA.items():
-         if q_id.endswith("Quest"):
-            progress = user_stats["quest_progress"].get(q_id, 0)
-            if progress >= q_data["goal"] and progress < 1.5: 
-                completed_count += 1
-                
-    for q_id, q_data in user_stats["daily_quests"].items():
-        if q_data["progress"] >= q_data["goal"] and not q_data["claimed"]:
-            completed_count += 1
-            
-    return completed_count
-
-
-# --- DISCORD BOT VIEWS (Semua View sama, tapi AutoFishingView kini bergantung pada user_stats['location']) ---
+# --- DISCORD BOT VIEWS (Interactions) ---
 class BackView(View):
-    # (Same as before)
     def __init__(self, user_id, bot_instance, timeout=120):
         super().__init__(timeout=timeout)
         self.user_id = user_id
@@ -549,7 +535,6 @@ class BackView(View):
         )
 
 class MainMenuView(BackView):
-    # (Same as before)
     def __init__(self, user_id, bot_instance):
         super().__init__(user_id, bot_instance)
         self.clear_items() 
@@ -563,6 +548,11 @@ class MainMenuView(BackView):
         self.add_item(Button(label="⭐ Quests", custom_id="main_quests", style=discord.ButtonStyle.red))
         self.add_item(Button(label="🏆 Leaderboard", custom_id="main_top", style=discord.ButtonStyle.red))
         self.add_item(Button(label="👤 Profile", custom_id="main_profile", style=discord.ButtonStyle.grey))
+        
+        # Tambahkan callback untuk semua tombol di Main Menu
+        for item in self.children:
+            if isinstance(item, Button) and item.custom_id.startswith("main_"):
+                item.callback = self.main_menu_callback
 
     def create_main_embed(self):
         user_stats = get_user_stats(self.user_id)
@@ -586,6 +576,30 @@ class MainMenuView(BackView):
             embed.set_footer(text=f"{luck_text} | Happy Fishing!")
             
         return embed
+    
+    async def main_menu_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This is not your menu!", ephemeral=True)
+        
+        custom_id = interaction.data['custom_id']
+        user_stats = get_user_stats(self.user_id)
+        
+        if custom_id == "main_fish":
+            fish_view = AutoFishingView(self.user_id, self.bot)
+            await interaction.response.edit_message(
+                embed=fish_view.create_fishing_embed(user_stats),
+                view=fish_view
+            )
+        elif custom_id == "main_travel":
+            travel_view = TravelView(self.user_id, self.bot)
+            await interaction.response.edit_message(
+                embed=travel_view.create_travel_embed(user_stats),
+                view=travel_view
+            )
+        # TODO: Implement remaining menu options (Shop, Equip, Quests, etc.)
+        else:
+            await interaction.response.send_message(f"Feature '{custom_id.replace('main_', '').title()}' not implemented yet.", ephemeral=True)
+
 
 class TravelLocationSelect(Select):
     def __init__(self, user_stats, user_id):
@@ -623,7 +637,6 @@ class TravelView(BackView):
         island_list = []
         for name, data in ISLAND_DATA.items():
             status = "✅ UNLOCKED" if name in user_stats["unlocked_islands"] else f"🔒 LOCKED ({CURRENCY_SYMBOL}{data['price']:,.2f})"
-            # Add a small note about the fish rarity on this island
             pool = FISH_POOL_BY_ISLAND.get(name, [])
             max_rarity = max([f['rarity'] for f in pool]) if pool else "N/A"
             island_list.append(f"**{name}** (Max Rarity: {max_rarity}) | {status}")
@@ -636,7 +649,7 @@ class TravelView(BackView):
         user_stats = get_user_stats(self.user_id)
         
         next_island_to_unlock = None
-        for i, island_name in enumerate(ISLAND_LIST):
+        for island_name in ISLAND_LIST:
             if island_name not in user_stats["unlocked_islands"]:
                 next_island_to_unlock = island_name
                 break
@@ -650,7 +663,6 @@ class TravelView(BackView):
                 row=0
             ))
         
-        # Dropdown to select unlocked island to set as current location
         unlocked_options = [
             discord.SelectOption(label=name, value=name, default=(name == user_stats['location']))
             for name in user_stats["unlocked_islands"]
@@ -662,6 +674,7 @@ class TravelView(BackView):
 
     @discord.ui.button(label="Buy Next Island", custom_id="travel_buy_next", style=discord.ButtonStyle.primary, row=0)
     async def travel_buy_callback(self, button: Button, interaction: discord.Interaction):
+        # Callback logic is correct as provided in your initial code
         if interaction.user.id != self.user_id: return await interaction.response.send_message("Not your menu!", ephemeral=True)
         user_stats = get_user_stats(self.user_id)
         
@@ -682,7 +695,7 @@ class TravelView(BackView):
 
         user_stats["koin"] -= price
         user_stats["unlocked_islands"].append(next_island_to_unlock)
-        user_stats["location"] = next_island_to_unlock # Auto set as current fishing location
+        user_stats["location"] = next_island_to_unlock
         
         new_view = TravelView(self.user_id, self.bot)
         await interaction.response.edit_message(embed=new_view.create_travel_embed(user_stats), view=new_view)
@@ -696,12 +709,39 @@ class AutoFishingView(BackView):
     def __init__(self, user_id, bot_instance):
         super().__init__(user_id, bot_instance, timeout=300)
         self.clear_items()
+        
+        user_stats = get_user_stats(user_id)
+        # Tentukan status tombol berdasarkan cooldown
+        is_cooldown = time.time() - user_stats["last_fished"] < self.COOLDOWN_TIME
+        
+        self.auto_fish_button = Button(
+            label="🎣 Reel In (Auto Fish)!", 
+            custom_id="auto_fish_button", 
+            style=discord.ButtonStyle.green, 
+            row=0,
+            disabled=is_cooldown
+        )
+        
         self.add_item(self.auto_fish_button)
         super().add_item(super().back_to_main_menu)
+        
+        # Tambahkan fungsi callback
+        self.auto_fish_button.callback = self.auto_fish_callback
+        
+    def create_fishing_embed(self, user_stats):
+        embed = discord.Embed(
+            title="🎣 Auto Fishing Management",
+            description=f"You are currently fishing at **{user_stats['location']}** with **{user_stats['current_rod']}** and **{user_stats['current_bait']}**.",
+            color=0x4169E1
+        )
+        remaining = max(0, self.COOLDOWN_TIME - (time.time() - user_stats["last_fished"]))
+        
+        embed.add_field(name="Cooldown Status", value=f"⏱️ Next Catch: **{remaining:.1f} seconds**", inline=False)
+        embed.add_field(name="Current Luck", value=f"✨ {calculate_total_luck(user_stats)}%", inline=True)
+        embed.add_field(name="Current Money", value=f"💰 {CURRENCY_SYMBOL}{user_stats['koin']:,.2f}", inline=True)
+        
+        return embed
 
-    auto_fish_button = Button(label="🎣 Reel In (Auto Fish)!", custom_id="auto_fish_button", style=discord.ButtonStyle.green, row=0)
-
-    @auto_fish_button.callback
     async def auto_fish_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("This is not your fishing pole!", ephemeral=True)
@@ -716,6 +756,9 @@ class AutoFishingView(BackView):
         
         status, result_data, weight, rarity, coins_earned = perform_fishing(user_stats)
         
+        # Disable button while on cooldown
+        self.auto_fish_button.disabled = True
+        
         embed = discord.Embed(title=f"🎣 Auto Fishing Catch at {user_stats['location']}!", 
                               color=RARITY_COLORS.get(rarity, 0x000000))
         
@@ -728,200 +771,66 @@ class AutoFishingView(BackView):
                                    f"**Weight:** {weight} kg\n"
                                    f"**Reward:** **{CURRENCY_SYMBOL}{coins_earned:,.2f}**"), 
                             inline=False)
-            
-            completed_quests = check_quest_completion(user_stats)
-            luck_text = f"Total Luck: {calculate_total_luck(user_stats)}%"
-            if GLOBAL_EVENT_BOOST["is_active"]:
-                luck_text += f" (Event x{GLOBAL_EVENT_BOOST['luck_multiplier']:.0f})"
-            
-            footer_text = f"{luck_text} | Next catch in {self.COOLDOWN_TIME}s"
-            if completed_quests > 0:
-                 footer_text = f"⭐ Quests Ready to Claim! | {luck_text}"
-            embed.set_footer(text=footer_text)
-
-        else:
-            embed.title = "❌ Catch Lost!"
+        else: # Failed
+            embed.description = status
+            embed.add_field(name="Weight Lost", value=f"**{weight} kg**", inline=False)
             embed.color = RARITY_COLORS["Failed"]
-            embed.description = f"{result_data}"
-            luck_text = f"Total Luck: {calculate_total_luck(user_stats)}%"
-            if GLOBAL_EVENT_BOOST["is_active"]:
-                luck_text += f" (Event x{GLOBAL_EVENT_BOOST['luck_multiplier']:.0f})"
-            embed.set_footer(text=f"{luck_text} | Next catch in {self.COOLDOWN_TIME}s")
-            
-        await interaction.response.edit_message(embed=embed, view=AutoFishingView(self.user_id, self.bot))
-
-# (The rest of the Views: QuestsView, ShopView, EquipView, TopView, and all Select components are assumed to be similar to the previous implementation but use the correct `user_stats` and `CURRENCY_SYMBOL`).
-# Due to length constraints, I'll only include the Admin command finalization and the bot setup.
-
-# --- General Interaction Handlers (Routing) ---
-@bot.event
-async def on_interaction(interaction: discord.Interaction):
-    if interaction.type != discord.InteractionType.component:
-        return
-
-    custom_id = interaction.data.get("custom_id")
-    user_id = interaction.user.id
-    user_stats = get_user_stats(user_id) 
-
-    if custom_id and custom_id.startswith("main_"):
-        # ... (Main menu routing logic) ...
-        target_embed = None
-        target_view = None
         
-        if custom_id == "main_fish":
-            embed = discord.Embed(title=f"Auto Fishing System is Active at {user_stats['location']}", description="Press **'🎣 Reel In (Auto Fish)!'** to check your next catch!", color=0xADD8E6)
-            ench_level = user_stats["rod_enchantment"].get(user_stats['current_rod'], 0)
-            embed.set_footer(text=f"Current Rod: {user_stats['current_rod']} (+{ench_level}) | Current Bait: {user_stats['current_bait']}")
-            target_embed = embed
-            target_view = AutoFishingView(user_id, bot)
-            
-        elif custom_id == "main_profile":
-            inventory_str = "\n".join([f"**{fish}**: {count}" for fish, count in user_stats["inventory"].items()][:10]) or "Inventory is empty."
-            
-            embed = discord.Embed(title=f"🎣 {interaction.user.name}'s Profile", color=0x32CD32)
-            embed.add_field(name=f"Money ({CURRENCY_SYMBOL})", value=f"**{CURRENCY_SYMBOL}{user_stats['koin']:,.2f}**", inline=True)
-            embed.add_field(name="Total Luck", value=f"**{calculate_total_luck(user_stats)}%**", inline=True)
-            embed.add_field(name="Location (Fishing)", value=user_stats['location'], inline=False)
-            
-            current_rod_data = ROD_DATA.get(user_stats['current_rod'], {})
-            ench_level = user_stats["rod_enchantment"].get(user_stats['current_rod'], 0)
-            
-            embed.add_field(name="Rod", 
-                            value=f"**{user_stats['current_rod']}** (+{ench_level})\nMax Weight: {current_rod_data.get('max_weight_kg', 'N/A'):,} kg", 
-                            inline=True)
-            embed.add_field(name="Bait", 
-                            value=f"**{user_stats['current_bait']}**\nBait Luck: +{BAIT_DATA.get(user_stats['current_bait'], {}).get('luck_bonus', 0)}%", 
-                            inline=True)
-            embed.add_field(name="Inventory (Preview)", value=inventory_str, inline=False)
-            target_embed = embed
-            target_view = BackView(user_id, bot)
-            
-        elif custom_id == "main_shop":
-            shop_view = ShopView(user_id, bot, current_type="Rod")
-            target_embed = shop_view.create_shop_embed(ROD_DATA, "Rod")
-            target_view = shop_view
-
-        elif custom_id == "main_equip":
-            equip_view = EquipView(user_id, bot)
-            target_embed = equip_view.create_equip_embed(user_stats)
-            target_view = equip_view
-
-        elif custom_id == "main_quests":
-            quests_view = QuestsView(user_id, bot)
-            target_embed = quests_view.create_quest_embed()
-            target_view = quests_view
-
-        elif custom_id == "main_travel":
-            travel_view = TravelView(user_id, bot)
-            target_embed = travel_view.create_travel_embed(user_stats)
-            target_view = travel_view
-            
-        elif custom_id == "main_top":
-            top_view = TopView(user_id, bot)
-            target_embed = top_view.create_top_embed()
-            target_view = top_view
-        
-        if target_embed and target_view:
-            await interaction.response.edit_message(embed=target_embed, view=target_view)
-            return
-
-    elif custom_id and custom_id.startswith("shop_"):
-        # ... (Shop routing logic) ...
-        # Simplified for demonstration (assuming ShopView class is present)
-        if custom_id == "shop_rod":
-            shop_view = ShopView(user_id, bot, current_type="Rod")
-            target_embed = shop_view.create_shop_embed(ROD_DATA, "Rod")
-            await interaction.response.edit_message(embed=target_embed, view=shop_view)
-            return
-        elif custom_id == "shop_bait":
-            shop_view = ShopView(user_id, bot, current_type="Bait")
-            target_embed = shop_view.create_shop_embed(BAIT_DATA, "Bait")
-            await interaction.response.edit_message(embed=target_embed, view=shop_view)
-            return
-        
-    elif custom_id == "travel_buy_next":
-        await TravelView(user_id, bot).travel_buy_callback(None, interaction)
-        return
-        
-    elif custom_id == "set_fishing_location":
-         await TravelLocationSelect(user_stats, user_id).callback(interaction)
-         return
-
-    # Pass control to the specific View callback if not handled by main router
-    await bot.process_application_commands(interaction)
-
-# --- SLASH COMMAND ENTRY POINT ---
-
-@bot.slash_command(name="start", description="Open the main menu to access all bot features.")
-async def start_cmd(ctx: discord.ApplicationContext):
-    view = MainMenuView(ctx.author.id, bot)
-    await ctx.respond(embed=view.create_main_embed(), view=view)
-
-# --- ADMIN COMMANDS (Owner Only) ---
-class AdminCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        
-    @commands.slash_command(name="admin", description="Owner-only commands for bot management.")
-    @commands.is_owner()
-    async def admin_group(self, ctx: discord.ApplicationContext):
-        pass
-
-    @admin_group.command(name="set_koin", description="Gives or takes coins from a user.")
-    @commands.is_owner()
-    async def set_koin_cmd(self, ctx: discord.ApplicationContext, user: discord.Member, amount: float):
-        user_stats = get_user_stats(user.id)
-        user_stats["koin"] = amount
-        await ctx.respond(f"✅ **{user.display_name}**'s koin set to **{CURRENCY_SYMBOL}{amount:,.2f}**.", ephemeral=True)
-    
-    @admin_group.command(name="clear_cooldown", description="Resets a user's fishing cooldown.")
-    @commands.is_owner()
-    async def clear_cooldown_cmd(self, ctx: discord.ApplicationContext, user: discord.Member):
-        user_stats = get_user_stats(user.id)
-        user_stats["last_fished"] = 0
-        await ctx.respond(f"✅ **{user.display_name}**'s fishing cooldown has been reset.", ephemeral=True)
-
-    @admin_group.command(name="give_item", description="Gives a specific Rod or Bait to a user.")
-    @commands.is_owner()
-    async def give_item_cmd(self, ctx: discord.ApplicationContext, user: discord.Member, item_name: str):
-        user_stats = get_user_stats(user.id)
-        item_name = item_name.strip()
-        
-        if item_name in ROD_DATA and item_name not in user_stats["owned_rods"]:
-            user_stats["owned_rods"].append(item_name)
-            user_stats["rod_enchantment"][item_name] = 0
-            msg = f"✅ Gave Rod **{item_name}** to **{user.display_name}**."
-        elif item_name in BAIT_DATA and item_name not in user_stats["owned_baits"]:
-            user_stats["owned_baits"].append(item_name)
-            msg = f"✅ Gave Bait **{item_name}** to **{user.display_name}**."
-        else:
-            msg = f"❌ Item **{item_name}** is not a valid Rod/Bait, or the user already owns it."
-            
-        await ctx.respond(msg, ephemeral=True)
-
-    @admin_group.command(name="start_event", description="Starts a global luck boost event.")
-    @commands.is_owner()
-    async def start_event_cmd(self, ctx: discord.ApplicationContext, luck_multiplier: float):
-        GLOBAL_EVENT_BOOST["luck_multiplier"] = luck_multiplier
-        GLOBAL_EVENT_BOOST["is_active"] = (luck_multiplier > 1.0)
-        
+        completed_quests = check_quest_completion(user_stats)
+        luck_text = f"Total Luck: {calculate_total_luck(user_stats)}%"
         if GLOBAL_EVENT_BOOST["is_active"]:
-            msg = f"🔥 ADMIN EVENT STARTED! Global Luck is now **x{luck_multiplier:.2f}**!"
-        else:
-            msg = "✅ Global Luck boost deactivated."
-            
-        await ctx.respond(msg)
+            luck_text += f" (Event x{GLOBAL_EVENT_BOOST['luck_multiplier']:.0f})"
+        
+        footer_text = f"{luck_text} | Next catch in {self.COOLDOWN_TIME}s."
+        if completed_quests > 0:
+             footer_text = f"⭐ {completed_quests} Quests Ready! | " + footer_text
+             
+        embed.set_footer(text=footer_text)
+        
+        # Update embed dan view
+        await interaction.response.edit_message(embed=self.create_fishing_embed(user_stats), view=self)
+        
+        # Kirim hasil pancingan sebagai follow-up message (Visible ke semua orang)
+        await interaction.followup.send(embed=embed)
+
+        # Re-enable the button after cooldown (Ini perlu loop atau task, tapi kita pakai cara sederhana)
+        # Karena kita menggunakan edit_message, kita akan mengandalkan user untuk menekan lagi setelah cooldown habis.
 
 
-# --- BOT SETUP AND RUN ---
+# --- BOT EVENTS & COMMANDS ---
 
 @bot.event
 async def on_ready():
-    print(f"Bot is ready. Logged in as {bot.user}")
-    bot.add_cog(AdminCog(bot))
-    # Note: Other Views/Cogs need to be added here if defined separately
+    """Dipanggil saat bot berhasil login."""
+    print(f'Bot is ready. Logged in as {bot.user}')
+    await bot.change_presence(activity=discord.Game(name=f"R$ Fishing | /menu"))
     
-# bot.run(TOKEN) 
-# The bot.run(TOKEN) command is omitted here since this is a code block in an AI response.
-# You will need to uncomment the bot.run(TOKEN) line and replace the placeholder token 
-# with your actual bot token to run this code.
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
+
+@bot.tree.command(name="menu", description="Membuka Menu Utama Bot Memancing Interaktif.")
+async def menu_command(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    # Memastikan user stats terinisialisasi
+    get_user_stats(user_id) 
+    
+    main_view = MainMenuView(user_id, bot)
+    await interaction.response.send_message(
+        embed=main_view.create_main_embed(), 
+        view=main_view,
+        ephemeral=True # Hanya bisa dilihat oleh pengguna (disarankan untuk menu)
+    )
+
+# --- RUN BOT ---
+
+# Untuk Replit: Anda harus mengimpor dan memanggil keep_alive di sini
+# from keep_alive import keep_alive
+# keep_alive()
+
+if TOKEN:
+    bot.run(TOKEN)
+else:
+    print("FATAL ERROR: Bot tidak dapat dijalankan karena Token Discord tidak ditemukan.")
